@@ -1,4 +1,4 @@
-##Resiliency Pattern Models
+# Resiliency Pattern Models
 
 This repository contains a collection of [microservice relisiency patterns](https://docs.microsoft.com/en-us/azure/architecture/patterns/category/resiliency) modeled as Continuous-Time Markov Chains (CTMC) using the [PRISM](https://www.prismmodelchecker.org/) probabilistic model checker. 
 
