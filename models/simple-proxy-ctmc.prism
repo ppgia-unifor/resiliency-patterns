@@ -23,7 +23,7 @@ const double MTTR=((1/AVAILABILITY)-1.00)*MTBF; // Mean time to repair
 const double RR=MTTR=0?IR:1/MTTR; // Repair rate (instantaneous if MTTR is zero)
 
 // Simple Proxy parameters
-const int CONN_TIMEOUT=5; // Connection timeout
+const int CONN_TIMEOUT; // Connection timeout
 const int RSP_TIMEOUT=10; // Response timeout
 
 // Client model -----------------
