@@ -7,8 +7,13 @@ The collection is under development and so far includes CTMC models for the foll
 * [Retry pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/retry)
 * [Circuit Breaker pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker)
 
-These two pattern models are described and analyzed in our companion paper entitled "[Model-Based Analysis of Microservice Resiliency Patterns](/publications/ICSA2020.pdf)", to be presented at the [IEEE International Conference on Software Architecture (ICSA 2020)](http://icsa-conferences.org/2020/index.html).
+These two pattern models are described and analyzed in our companion ICSA 2020 paper (link below).
 
 See the PRISM [documentation](https://www.prismmodelchecker.org/doc/) to learn more about its CTMC specification language and how to use the tool to analyze CTMC models.
 
-Please contact us if you have any question or would like to contribute to improve our resiliency pattern models catalog.
+Please contact us if you have any question or would like to contribute to improve our pattern catalog.
+
+## Publications
+
+MENDONÇA, N. C., ADERALDO, C. M., CÁMARA, J., GARLAN, D. Model-Based Analysis of Microservice Resiliency Patterns. In: IEEE International Conference on Software Architecture (ICSA 2020), Salvador, Brazil. [[PDF]](/publications/ICSA2020.pdf)
+
