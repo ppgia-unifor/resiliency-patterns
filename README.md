@@ -7,7 +7,7 @@ The collection is under development and so far includes CTMC models for the foll
 * [Retry pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/retry)
 * [Circuit Breaker pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker)
 
-These two pattern models are described and analyzed in our companion ICSA 2020 paper (link below). The CTMC specification for each model in the PRISM language is available in the [models](./models) folder.
+These two pattern models are described and analyzed in our companion ICSA 2020 paper (link below). The PRISM specification for each model is available in the [models](./models) folder.
 
 See the [PRISM documentation](https://www.prismmodelchecker.org/doc/) to learn more about the PRISM model and property specification languages.
 
