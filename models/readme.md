@@ -1,6 +1,6 @@
-# PRISM Models
+# CTMC Models
 
-The following PRISM models and properties are available:
+The following CTMC models and properties are available:
 
 * [Simple Proxy model](./simple-proxy-ctmc.prism): A CTMC model for a client-server system in which a client process invokes a server process via a simple proxy, with no resiliency pattern implemented.
 
