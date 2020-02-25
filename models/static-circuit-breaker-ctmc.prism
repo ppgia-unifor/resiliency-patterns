@@ -10,7 +10,7 @@ ctmc
 // Model parameters
 const int MAX_INT=9999; // Maximum integer value
 const double IR=9999; // Instantaneous transition rate
-const int MAX_ITER; // Maximum number of iterations (for fixed delay approximation)
+const int MAX_ITER=100; // Maximum number of iterations (for fixed delay approximation)
 
 // Client parameters
 const int MAX_RSP=100; // Maximum number of successful responses
@@ -20,12 +20,10 @@ const int MTBR=1; // Mean time between requests
 const int MAX_ERR=2; // Maximum number of failed invocations (required to open the circuit breaker)
 const int MAX_SUC=2; // Maximum number of successful invocations (required to close the circuit breaker)
 const int MAX_ROPEN=9999; // Maximum number of times the the circuit breaker can be reopened
-const int MIN_CB_TIMEOUT=10; // Minimum circuit breaker timeout 
-const int MAX_CB_TIMEOUT; // Maximum circuit breaker timeout - to be defined during the experiments (suggestion: 10, 20, 40)
 const int CB_TIMEOUT; // Circuit breaker timeout (suggestion: 15-60)
 
 // Simple Proxy parameters
-const int CONN_TIMEOUT=5; // Connection timeout
+const int CONN_TIMEOUT=2; // Connection timeout
 const int RSP_TIMEOUT=10; // Response timeout
 
 // Server parameters
