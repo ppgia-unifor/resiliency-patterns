@@ -13,4 +13,4 @@ a server process using the Retry pattern.
 
 * [Properties](./patterns-ctmc.props): Model properties to be checked in the above models using PRISM.
 
-
+See our [ICSA 2020 paper](../publications/ICSA2020.pdf) for a more detailed description of each model.
