@@ -1,0 +1,180 @@
+// A CTMC model for a client-server system in which a client process invokes 
+// a server process using the Retry pattern
+// (see https://docs.microsoft.com/en-us/azure/architecture/patterns/retry).
+//
+// Author: Nabor C. Mendonça (Last update: 24/02/2020)
+
+ctmc
+
+// Model parameters
+const double IR=9999; // Instantaneous transition rate
+const int MAX_ITER=100; // Maximum number of iterations (for fixed delay approximation)
+
+// Client parameters
+const int MAX_RSP=100; // Maximum number of successful responses
+const int MTBR=1; // Mean time between requests 
+
+// Retry Proxy parameters
+const int MAX_RET=5; // Maximum number of retries per request
+const int MIN_BO=5; // Minimum backoff delay
+const int MAX_BO; // Maximum backoff delay - to be defined during the experiments (suggestion: 10, 20, 40)
+global BO:[MIN_BO..MAX_BO+1] init MIN_BO; // Mean backoff delay
+
+// Simple Proxy parameters
+const int CONN_TIMEOUT=5; // Connection timeout
+const int RSP_TIMEOUT=10; // Response timeout
+
+// Server parameters
+const double AVAILABILITY; // Server availability - to be defined during the experiments (suggestion: 0.5:0.1:1.0)
+const int MRT=5; // Mean response time
+const int MAX_RBF=10; // Maximum number of requests between failures
+const double MTBF=MAX_RBF*MRT; // Mean time between failures;
+const double MTTR=((1/AVAILABILITY)-1.00)*MTBF; // Mean time to repair 
+const double RR=MTTR=0?IR:1/MTTR; // Repair rate (instantaneous if MTTR is zero)
+
+// Client model -----------------
+
+// State values
+const int C_INIT=0;
+const int C_REQ=1;
+const int C_DONE=2;
+
+module client
+
+c_crs:[0..MAX_RSP] init 0; // Client response counter
+cs:[C_INIT..C_DONE] init C_INIT; // Client state
+
+[r_request]  (cs=C_INIT) & (c_crs<MAX_RSP) -> 1/MTBR: (cs'=C_REQ); // Send request if MAX_RSP not reached
+[r_response] (cs=C_REQ)  & (c_crs<MAX_RSP) -> 1: (cs'=C_INIT) & (c_crs'=c_crs+1); // Receive response and increment the response counter
+[r_fail]     (cs=C_REQ)  & (c_crs<MAX_RSP) -> 1: (cs'=C_INIT); // Return to the initial state if request failed
+[end]        (cs=C_INIT) & (c_crs=MAX_RSP) -> IR: (cs'=C_DONE); // MAX_RSP reached
+endmodule
+
+// Retry Proxy model -----------------
+
+// State values
+const int RP_INIT=0;
+const int RP_CREQ=1;
+const int RP_SREQ=2;
+const int RP_RES=3;
+const int RP_FAILED=4;
+const int RP_RETRY=5;
+
+// Formula for exponentially increasing the backoff delay
+formula backoff_policy=min(MAX_BO,MIN_BO*pow(2,rp_crt));
+
+module retry_proxy
+
+rp_crt:[0..MAX_RET] init 0; // Retry counter
+rps:[RP_INIT..RP_RETRY] init RP_INIT; // Retry Proxy state
+
+[r_request]    (rps=RP_INIT)   & (rp_crt<=MAX_RET) -> 1: (rps'=RP_CREQ); // Receive request from client
+[p_request]    (rps=RP_CREQ)   & (rp_crt<=MAX_RET) -> IR: (rps'=RP_SREQ); // Send request to server
+[p_response]   (rps=RP_SREQ)   & (rp_crt<=MAX_RET) -> 1: (rps'=RP_RES); // Receive response from server
+[r_response]   (rps=RP_RES)    & (rp_crt<=MAX_RET) -> IR: (rps'=RP_INIT) & (rp_crt'=0); // Send response back to client, reset retry counter and return to the initial state
+[p_fail]       (rps=RP_SREQ)   & (rp_crt<=MAX_RET) -> 1:  (rps'=RP_FAILED);  // Move to the failed state if client times out
+[]             (rps=RP_FAILED) & (rp_crt<MAX_RET)  -> IR: (rps'=RP_RETRY) & (BO'=backoff_policy);  // Update backoff delay and move to the retry state
+[backoff]      (rps=RP_RETRY)  & (rp_crt<MAX_RET)  -> 1/BO: (rps'=RP_CREQ) & (rp_crt'=rp_crt+1);  // Backoff, increment retry counter and move to the CREQ state
+[r_fail]       (rps=RP_FAILED) & (rp_crt=MAX_RET)  -> IR: (rps'=RP_INIT) & (rp_crt'=0);  // Report failure to client, reset retry counter and return to the initial state
+endmodule
+
+
+// Simple Proxy model -----------------
+
+// State values
+const int SP_INIT=0;
+const int SP_CREQ=1;
+const int SP_CONN=2;
+const int SP_SREQ=3;
+const int SP_RES=4;
+const int SP_FAILED=5;
+const int SP_NORES=6;
+
+module simple_proxy
+
+sps:[SP_INIT..SP_NORES] init SP_INIT; // Simple Proxy state
+
+[p_request]    (sps=SP_INIT)   -> 1:  (sps'=SP_CREQ); // Receive request from client
+[p_connect]    (sps=SP_CREQ)   -> IR: (sps'=SP_CONN); // Attempt to connect to server
+[s_request]    (sps=SP_CONN)   -> IR: (sps'=SP_SREQ); // Send request to server
+[s_response]   (sps=SP_SREQ)   -> 1:  (sps'=SP_RES); // Receive response from server
+[p_response]   (sps=SP_RES)    -> IR: (sps'=SP_INIT); // Send response back to client and return to the initial state
+[conn_timeout] (sps=SP_CONN)   -> 1:  (sps'=SP_FAILED);  // Move to the failed state if connection timeout expires before conecting to server
+[rsp_timeout]  (sps=SP_SREQ)   -> 1:  (sps'=SP_NORES);  // Move to the no response state if response timeout expires before receiving a response from server
+[reset]        (sps=SP_NORES)  -> IR: (sps'=SP_FAILED);  // Reset connection to server and move to the failed state
+[p_fail]       (sps=SP_FAILED) -> IR: (sps'=SP_INIT);  // Report failure to client and return to the initial state
+endmodule
+
+// Connection Timeout model -----------------
+//
+// This model uses an Erlang distribution to approximate a fixed delay in a CTMC model, where FD_k is the shape parameter and FD_m is the mean delay 
+// (the greater the shape value, the better the approximation yet the larger the resulting CTMC model;
+// see Prism FAQ at http://www.prismmodelchecker.org/manual/FrequentlyAskedQuestions/PRISMModelling#det_delay)
+//
+
+const int FD_k=MAX_ITER; // shape
+const int FD_m=CONN_TIMEOUT; // fixed delay
+
+// State values
+const int FD_INIT = 0;
+const int FD_ITERATE = 1;
+
+module connection_timeout 
+
+cti:[1..FD_k+1] init 1; // Iteration index
+cts:[FD_INIT..FD_ITERATE] init FD_INIT; // Fixed delay state
+
+[p_connect]    (cts=FD_INIT)    & (cti<=FD_k) & (FD_m>0)  -> 1: (cts'=FD_ITERATE); // Start iteration
+[s_request]    (cts=FD_ITERATE) & (cti<=FD_k) & (FD_m>0)  -> 1: (cts'=FD_INIT) & (cti'=1); // Stop iteration, reset iteration index and move to the initial state
+[ct_iterate]   (cts=FD_ITERATE) & (cti<FD_k)  & (FD_m>0)  -> FD_k/FD_m: (cts'=FD_ITERATE) & (cti'=cti+1); // Iteration loop
+[conn_timeout] (cts=FD_ITERATE) & (cti=FD_k)  & (FD_m>0)  -> FD_k/FD_m: (cts'=FD_INIT) & (cti'=1); // Enable delay action after FD_k iterations, reset iteration index and move to the initial state
+
+endmodule
+
+// Response Timeout model (created via module rewrite based on the Connection Timeout module) ----------------- 
+
+module response_timeout = connection_timeout [ 
+FD_m=RSP_TIMEOUT,
+cti=rti,
+cts=rts,
+p_connect=s_request,
+s_request=s_response,
+ct_iterate=rt_iterate,
+conn_timeout=rsp_timeout
+] endmodule
+
+
+// Server model -----------------
+//
+// Assumption: the server only fails between requests
+//
+
+// State values
+const int S_INIT=0;
+const int S_REQ=1;
+const int S_FAILED=2;
+
+module server
+s_crq:[0..MAX_RBF] init 0; // Server request counter
+ss: [S_INIT..S_FAILED] init S_INIT; // Server state
+
+[s_request]  (ss=S_INIT)   & (s_crq<MAX_RBF)  -> 1: (ss'=S_REQ) & (s_crq'=s_crq+1); // Receive request and increment request counter
+[s_response] (ss=S_REQ)    & (s_crq<=MAX_RBF) -> 1/MRT: (ss'=S_INIT); // Serve request and return to the initial state
+[reset]      (ss=S_REQ)    & (s_crq<=MAX_RBF) -> 1: (ss'=S_INIT); // Return to the initial state if client or proxy times out
+[s_fail]     (ss=S_INIT)   & (s_crq=MAX_RBF)  -> IR: (ss'=S_FAILED); // Move to the failed state when MAX_RBF is reached 
+[s_recover]  (ss=S_FAILED) & (s_crq=MAX_RBF)  -> RR: (ss'=S_INIT) & (s_crq'=0); // Recover from failure, reset the request counter and return to the initial state
+endmodule
+
+
+// Model rewards  -----------------
+
+// Expected total execution time
+rewards "total_time"
+	true: 1; 
+endrewards
+
+// Expected contention time (i.e., time holding network resources)
+rewards "contention_time"
+	(sps=SP_CONN): 1;
+	(sps=SP_SREQ): 1;
+endrewards

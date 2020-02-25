@@ -1,0 +1,224 @@
+// A CTMC model for a client-server system in which a client process invokes a server 
+// process using a static variation of the Circuit Breaker pattern. The Circuit Breaker
+// timeout value is constant
+// (see https://docs.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker). 
+//
+// Author: Nabor C. Mendonça (Last update: 24/02/2020)
+
+ctmc
+
+// Model parameters
+const int MAX_INT=9999; // Maximum integer value
+const double IR=9999; // Instantaneous transition rate
+const int MAX_ITER; // Maximum number of iterations (for fixed delay approximation)
+
+// Client parameters
+const int MAX_RSP=100; // Maximum number of successful responses
+const int MTBR=1; // Mean time between requests
+
+// Circuit Breaker parameters
+const int MAX_ERR=2; // Maximum number of failed invocations (required to open the circuit breaker)
+const int MAX_SUC=2; // Maximum number of successful invocations (required to close the circuit breaker)
+const int MAX_ROPEN=9999; // Maximum number of times the the circuit breaker can be reopened
+const int MIN_CB_TIMEOUT=10; // Minimum circuit breaker timeout 
+const int MAX_CB_TIMEOUT; // Maximum circuit breaker timeout - to be defined during the experiments (suggestion: 10, 20, 40)
+const int CB_TIMEOUT; // Circuit breaker timeout (suggestion: 15-60)
+
+// Simple Proxy parameters
+const int CONN_TIMEOUT=5; // Connection timeout
+const int RSP_TIMEOUT=10; // Response timeout
+
+// Server parameters
+const double AVAILABILITY; // Server availability - to be defined during the experiments (suggestion: 0.5:0.1:1.0)
+const int MRT=5; // Mean response time
+const int MAX_RBF=10; // Maximum number of requests between failures
+const double MTBF=MAX_RBF*MRT; // Mean time between failures;
+const double MTTR=((1/AVAILABILITY)-1.00)*MTBF; // Mean time to repair 
+const double RR=MTTR=0?IR:1/MTTR; // Repair rate (instantaneous if MTTR is zero)
+
+// Client model -----------------
+
+// State values
+const int C_INIT=0;
+const int C_REQ=1;
+const int C_DONE=2;
+
+module client
+
+c_crs:[0..MAX_RSP] init 0; // Client response counter
+cs:[C_INIT..C_DONE] init C_INIT; // Client state
+
+[cb_request]  (cs=C_INIT) & (c_crs<MAX_RSP) -> 1/MTBR: (cs'=C_REQ); // Send request if MAX_RSP not reached
+[cb_response] (cs=C_REQ)  & (c_crs<MAX_RSP) -> 1: (cs'=C_INIT) & (c_crs'=c_crs+1); // Receive response and increment the response counter
+[cb_fail]     (cs=C_REQ)  & (c_crs<MAX_RSP) -> 1: (cs'=C_INIT); // Return to the initial state if request failed
+[end]        (cs=C_INIT) & (c_crs=MAX_RSP) -> IR: (cs'=C_DONE); // MAX_RSP reached
+endmodule
+
+// Circuit Breaker proxy model -----------------
+
+// State values
+const int CBP_INIT=0;
+const int CBP_CREQ=1;
+const int CBP_SREQ=2;
+const int CBP_RES=3;
+const int CBP_FAILED=4;
+
+module circuit_breaker_proxy
+
+cbps:[CBP_INIT..CBP_FAILED] init CBP_INIT; // Circuit breaker proxy state
+
+[cb_request]  (cbps=CBP_INIT)                  -> 1:  (cbps'=CBP_CREQ); // Receive request from client
+[p_request]   (cbps=CBP_CREQ) & (cbs!=CB_OPEN) -> IR: (cbps'=CBP_SREQ); // Send request to server if the circuit breaker is not open
+[p_response]  (cbps=CBP_SREQ) & (cbs!=CB_OPEN) -> IR: (cbps'=CBP_RES); // Receive response from server
+[cb_response] (cbps=CBP_RES)  & (cbs!=CB_OPEN) -> IR: (cbps'=CBP_INIT); // Send response back to client and return to the initial state
+[p_fail]      (cbps=CBP_SREQ) & (cbs!=CB_OPEN) -> IR: (cbps'=CBP_FAILED);  // Move to the failed state if client times out
+[]            (cbps=CBP_CREQ) & (cbs=CB_OPEN)  -> IR: (cbps'=CBP_FAILED);  // Fail fast if the circuit breaker is open
+[cb_fail]     (cbps=CBP_FAILED)                -> IR: (cbps'=CBP_INIT);  // Report failure to client and return to the initial state
+endmodule
+
+// Circuit Breaker state machine model -----------------
+
+// State values
+const int CB_CLOSED=0;
+const int CB_OPEN=1;
+const int CB_HALFOPEN=2;
+
+module circuit_breaker_state_machine
+
+cb_cerr:[0..MAX_ERR] init 0; // Error counter
+cb_csuc:[0..MAX_SUC] init 0; // Success counter
+cbs:[CB_CLOSED..CB_HALFOPEN] init CB_CLOSED; // Circuit breaker state
+
+[p_response] (cbs=CB_CLOSED)   & (cb_cerr<MAX_ERR) -> 1:  (cbs'=CB_CLOSED) & (cb_cerr'=0); // If invocation is successul, keep in the closed state and reset error counter
+[p_fail]     (cbs=CB_CLOSED)   & (cb_cerr<MAX_ERR) -> 1:  (cbs'=CB_CLOSED) & (cb_cerr'=cb_cerr+1);  // If invocation fails, keep in the closed state until the maximum number of errors is reached
+[cb_open]    (cbs=CB_CLOSED)   & (cb_cerr=MAX_ERR) -> IR: (cbs'=CB_OPEN); // Move to the open state when the maximum number of errors is reached
+[cb_timeout] (cbs=CB_OPEN)     & (cb_cerr=MAX_ERR) -> 1:  (cbs'=CB_HALFOPEN) & (cb_csuc'=0); // Move to the half-open state after the circuit breaker timeout expires and reset the success counter
+[p_fail]     (cbs=CB_HALFOPEN) & (cb_csuc<MAX_SUC) -> 1:  (cbs'=CB_OPEN);  // If invocation fails, move back to the open state
+[p_response] (cbs=CB_HALFOPEN) & (cb_csuc<MAX_SUC) -> 1:  (cbs'=CB_HALFOPEN) & (cb_csuc'=cb_csuc+1); // If invocation is successul, keep in the half-open state until the maximum number of successful invocations is reached
+[cb_close]   (cbs=CB_HALFOPEN) & (cb_csuc=MAX_SUC) -> IR: (cbs'=CB_CLOSED) & (cb_cerr'=0); // Move to the closed state when the maximum number of successful invocations is reached and reset the error counter
+endmodule
+
+// Circuit breaker fixed timeout approximation
+//
+// This model uses an Erlang distribution to approximate a fixed delay in a CTMC model, where CBT_k is 
+// the shape parameter and CB_m is the mean delay 
+// (the greater the shape value, the better the approximation yet the larger the resulting CTMC model;
+// see Prism FAQ at http://www.prismmodelchecker.org/manual/FrequentlyAskedQuestions/PRISMModelling#det_delay)
+//
+
+const int CBT_k=MAX_ITER; // shape
+const int CBT_m=CB_TIMEOUT; // fixed delay
+
+// State values
+const int CBT_INIT=0;
+const int CBT_ITERATE=1;
+
+module circuit_breaker_timeout
+
+cbti:[1..CBT_k+1] init 1; // Iteration index
+cbts:[CBT_INIT..CBT_ITERATE] init CBT_INIT; // Circuit breaker timeout state
+
+[cbt_reset]   (cbts=CBT_INIT)    & (cbti<=CBT_k) & (cbs=CB_OPEN) -> IR: (cbts'=CBT_ITERATE); // Start iteration 
+[cbt_iterate] (cbts=CBT_ITERATE) & (cbti<CBT_k)  & (cbs=CB_OPEN) -> CBT_k/CBT_m: (cbts'=CBT_ITERATE) & (cbti'=cbti+1); // Iteration loop
+[cb_timeout]  (cbts=CBT_ITERATE) & (cbti=CBT_k)  & (cbs=CB_OPEN) -> CBT_k/CBT_m: (cbts'=CBT_INIT) & (cbti'=1); // Enable timeout action after CBT_k iterations, reset iteration index and move to the initial state
+endmodule
+
+
+// Simple Proxy model -----------------
+
+// State values
+const int SP_INIT=0;
+const int SP_CREQ=1;
+const int SP_CONN=2;
+const int SP_SREQ=3;
+const int SP_RES=4;
+const int SP_FAILED=5;
+const int SP_NORES=6;
+
+module simple_proxy
+
+sps:[SP_INIT..SP_NORES] init SP_INIT; // Simple Proxy state
+
+[p_request]    (sps=SP_INIT)   -> 1:  (sps'=SP_CREQ); // Receive request from client
+[p_connect]    (sps=SP_CREQ)   -> IR: (sps'=SP_CONN); // Attempt to connect to server
+[s_request]    (sps=SP_CONN)   -> IR: (sps'=SP_SREQ); // Send request to server
+[s_response]   (sps=SP_SREQ)   -> 1:  (sps'=SP_RES); // Receive response from server
+[p_response]   (sps=SP_RES)    -> IR: (sps'=SP_INIT); // Send response back to client and return to the initial state
+[conn_timeout] (sps=SP_CONN)   -> 1:  (sps'=SP_FAILED);  // Move to the failed state if connection timeout expires before conecting to server
+[rsp_timeout]  (sps=SP_SREQ)   -> 1:  (sps'=SP_NORES);  // Move to the no response state if response timeout expires before receiving a response from server
+[reset]        (sps=SP_NORES)  -> IR: (sps'=SP_FAILED);  // Reset connection to server and move to the failed state
+[p_fail]       (sps=SP_FAILED) -> IR: (sps'=SP_INIT);  // Report failure to client and return to the initial state
+endmodule
+
+// Connection Timeout model -----------------
+//
+// This model uses an Erlang distribution to approximate a fixed delay in a CTMC model, where FD_k is the shape parameter and FD_m is the mean delay 
+// (the greater the shape value, the better the approximation yet the larger the resulting CTMC model;
+// see Prism FAQ at http://www.prismmodelchecker.org/manual/FrequentlyAskedQuestions/PRISMModelling#det_delay)
+//
+
+const int FD_k=MAX_ITER; // shape
+const int FD_m=CONN_TIMEOUT; // fixed delay
+
+// State values
+const int FD_INIT = 0;
+const int FD_ITERATE = 1;
+
+module connection_timeout 
+
+cti:[1..FD_k+1] init 1; // Iteration index
+cts:[FD_INIT..FD_ITERATE] init FD_INIT; // Fixed delay state
+
+[p_connect]    (cts=FD_INIT)    & (cti<=FD_k) & (FD_m>0)  -> 1: (cts'=FD_ITERATE); // Start iteration
+[s_request]    (cts=FD_ITERATE) & (cti<=FD_k) & (FD_m>0)  -> 1: (cts'=FD_INIT) & (cti'=1); // Stop iteration, reset iteration index and move to the initial state
+[ct_iterate]   (cts=FD_ITERATE) & (cti<FD_k)  & (FD_m>0)  -> FD_k/FD_m: (cts'=FD_ITERATE) & (cti'=cti+1); // Iteration loop
+[conn_timeout] (cts=FD_ITERATE) & (cti=FD_k)  & (FD_m>0)  -> FD_k/FD_m: (cts'=FD_INIT) & (cti'=1); // Enable delay action after FD_k iterations, reset iteration index and move to the initial state
+
+endmodule
+
+// Response Timeout model (created via module rewrite based on the Connection Timeout module) ----------------- 
+
+module response_timeout = connection_timeout [ 
+FD_m=RSP_TIMEOUT,
+cti=rti,
+cts=rts,
+p_connect=s_request,
+s_request=s_response,
+ct_iterate=rt_iterate,
+conn_timeout=rsp_timeout
+] endmodule
+
+// Server model -----------------
+//
+// Assumption: the server only fails between requests
+//
+
+// State values
+const int S_INIT=0;
+const int S_REQ=1;
+const int S_FAILED=2;
+
+module server
+s_crq:[0..MAX_RBF] init 0; // Server request counter
+ss: [S_INIT..S_FAILED] init S_INIT; // Server state
+
+[s_request]  (ss=S_INIT)   & (s_crq<MAX_RBF)  -> 1: (ss'=S_REQ) & (s_crq'=s_crq+1); // Receive request and increment request counter
+[s_response] (ss=S_REQ)    & (s_crq<=MAX_RBF) -> 1/MRT: (ss'=S_INIT); // Serve request and return to the initial state
+[reset]      (ss=S_REQ)    & (s_crq<=MAX_RBF) -> 1: (ss'=S_INIT); // Return to the initial state if client or proxy times out
+[s_fail]     (ss=S_INIT)   & (s_crq=MAX_RBF)  -> IR: (ss'=S_FAILED); // Move to the failed state when MAX_RBF is reached 
+[s_recover]  (ss=S_FAILED) & (s_crq=MAX_RBF)  -> RR: (ss'=S_INIT) & (s_crq'=0); // Recover from failure, reset the request counter and return to the initial state
+endmodule
+
+
+// Model rewards  -----------------
+
+// Expected total execution time
+rewards "total_time"
+	true: 1; 
+endrewards
+
+// Expected contention time (i.e., time client spends waiting for a server connection or response)
+rewards "contention_time"
+	(sps=SP_CONN): 1;
+	(sps=SP_SREQ): 1;
+endrewards

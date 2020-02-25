@@ -1,0 +1,5 @@
+P=? [ F c_crs=MAX_RSP ]
+
+R{"total_time"}=? [ F c_crs=MAX_RSP ]
+
+R{"contention_time"}=? [ F c_crs=MAX_RSP ]
