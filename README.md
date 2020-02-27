@@ -15,5 +15,5 @@ Please contact us if you have any question or would like to contribute to improv
 
 ## Publications
 
-MENDONÇA, N. C., ADERALDO, C. M., CÁMARA, J., GARLAN, D. "Model-Based Analysis of Microservice Resiliency Patterns." In: IEEE International Conference on Software Architecture (ICSA), 2020, Salvador, Brazil. [[PDF]](/publications/ICSA2020.pdf)
+MENDONÇA, N. C., ADERALDO, C. M., CÁMARA, J., GARLAN, D. "Model-Based Analysis of Microservice Resiliency Patterns." In: IEEE International Conference on Software Architecture (ICSA), 2020, Salvador, Brazil. [[PDF]](https://www.researchgate.net/publication/339488033_Model-Based_Analysis_of_Microservice_Resiliency_Patterns)
 
